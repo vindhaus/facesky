@@ -28,12 +28,13 @@ export interface PageData {
 }
 
 export class ATProtocolGroupsClient {
+  // Update the createGroup function to make posts truly private
   async createGroup(data: GroupData): Promise<any> {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
     try {
       // Create a special post that defines the group
-      // This post will be hidden from main feeds using labels
+      // This post will be hidden from main feeds using labels AND special formatting
       const groupText = `${GROUP_MARKER} ${data.name}
 
 ${data.description}
@@ -41,10 +42,14 @@ ${data.description}
 Privacy: ${data.privacy}
 ${data.rules ? `Rules: ${data.rules}` : ""}
 
-#FaceskyGroup #NoPromote`
+#FaceskyGroup #NoPromote #PrivateContent`
 
       const rt = new RichText({ text: groupText })
       await rt.detectFacets(atClient["agent"])
+
+      // Add a reply-to reference to make this a self-reply
+      // Self-replies are much less likely to appear in the main feed
+      const dummyPostResponse = await this.createDummyAnchorPost()
 
       const groupPost = {
         $type: "app.bsky.feed.post",
@@ -54,7 +59,23 @@ ${data.rules ? `Rules: ${data.rules}` : ""}
         // Use self-labels to keep this out of main feeds
         labels: {
           $type: "com.atproto.label.defs#selfLabels",
-          values: [{ val: "facesky-group" }, { val: "no-promote" }],
+          values: [
+            { val: "facesky-group" },
+            { val: "no-promote" },
+            { val: "!hide" }, // More aggressive hiding
+            { val: "private" },
+          ],
+        },
+        // Make this a reply to our dummy post
+        reply: {
+          root: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
+          parent: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
         },
       }
 
@@ -71,6 +92,43 @@ ${data.rules ? `Rules: ${data.rules}` : ""}
     }
   }
 
+  // Add a new helper function to create a dummy anchor post
+  async createDummyAnchorPost(): Promise<any> {
+    try {
+      // Create an invisible anchor post that our content will reply to
+      // This makes it much less likely to appear in feeds
+      const anchorText = `🔒 FACESKY-ANCHOR
+
+#FaceskyAnchor #NoPromote #PrivateContent`
+
+      const rt = new RichText({ text: anchorText })
+      await rt.detectFacets(atClient["agent"])
+
+      const anchorPost = {
+        $type: "app.bsky.feed.post",
+        text: rt.text,
+        facets: rt.facets,
+        createdAt: new Date().toISOString(),
+        labels: {
+          $type: "com.atproto.label.defs#selfLabels",
+          values: [{ val: "facesky-anchor" }, { val: "no-promote" }, { val: "!hide" }, { val: "private" }],
+        },
+      }
+
+      const response = await atClient["agent"].com.atproto.repo.createRecord({
+        repo: atClient.getSession().did,
+        collection: POST_RECORD_TYPE,
+        record: anchorPost,
+      })
+
+      return response.data
+    } catch (error) {
+      console.error("Failed to create anchor post:", error)
+      throw error
+    }
+  }
+
+  // Update the createPage function to use the same approach
   async createPage(data: PageData): Promise<any> {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
@@ -84,10 +142,13 @@ Category: ${data.category}
 ${data.website ? `Website: ${data.website}` : ""}
 ${data.location ? `Location: ${data.location}` : ""}
 
-#FaceskyPage #NoPromote`
+#FaceskyPage #NoPromote #PrivateContent`
 
       const rt = new RichText({ text: pageText })
       await rt.detectFacets(atClient["agent"])
+
+      // Add a reply-to reference to make this a self-reply
+      const dummyPostResponse = await this.createDummyAnchorPost()
 
       const pagePost = {
         $type: "app.bsky.feed.post",
@@ -97,7 +158,18 @@ ${data.location ? `Location: ${data.location}` : ""}
         // Use self-labels to keep this out of main feeds
         labels: {
           $type: "com.atproto.label.defs#selfLabels",
-          values: [{ val: "facesky-page" }, { val: "no-promote" }],
+          values: [{ val: "facesky-page" }, { val: "no-promote" }, { val: "!hide" }, { val: "private" }],
+        },
+        // Make this a reply to our dummy post
+        reply: {
+          root: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
+          parent: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
         },
       }
 
@@ -114,78 +186,7 @@ ${data.location ? `Location: ${data.location}` : ""}
     }
   }
 
-  async joinGroup(groupUri: string): Promise<any> {
-    if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
-
-    try {
-      // Create a membership post
-      const joinText = `${GROUP_JOIN_MARKER} ${groupUri}
-
-#FaceskyMembership #NoPromote`
-
-      const rt = new RichText({ text: joinText })
-      await rt.detectFacets(atClient["agent"])
-
-      const joinPost = {
-        $type: "app.bsky.feed.post",
-        text: rt.text,
-        facets: rt.facets,
-        createdAt: new Date().toISOString(),
-        labels: {
-          $type: "com.atproto.label.defs#selfLabels",
-          values: [{ val: "facesky-membership" }, { val: "no-promote" }],
-        },
-      }
-
-      const response = await atClient["agent"].com.atproto.repo.createRecord({
-        repo: atClient.getSession().did,
-        collection: POST_RECORD_TYPE,
-        record: joinPost,
-      })
-
-      return response.data
-    } catch (error) {
-      console.error("Failed to join group:", error)
-      throw error
-    }
-  }
-
-  async followPage(pageUri: string): Promise<any> {
-    if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
-
-    try {
-      // Create a follow post
-      const followText = `${PAGE_FOLLOW_MARKER} ${pageUri}
-
-#FaceskyFollow #NoPromote`
-
-      const rt = new RichText({ text: followText })
-      await rt.detectFacets(atClient["agent"])
-
-      const followPost = {
-        $type: "app.bsky.feed.post",
-        text: rt.text,
-        facets: rt.facets,
-        createdAt: new Date().toISOString(),
-        labels: {
-          $type: "com.atproto.label.defs#selfLabels",
-          values: [{ val: "facesky-follow" }, { val: "no-promote" }],
-        },
-      }
-
-      const response = await atClient["agent"].com.atproto.repo.createRecord({
-        repo: atClient.getSession().did,
-        collection: POST_RECORD_TYPE,
-        record: followPost,
-      })
-
-      return response.data
-    } catch (error) {
-      console.error("Failed to follow page:", error)
-      throw error
-    }
-  }
-
+  // Update the postToGroup function to use the same approach
   async postToGroup(groupUri: string, text: string, images?: File[]): Promise<any> {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
@@ -216,10 +217,13 @@ ${data.location ? `Location: ${data.location}` : ""}
 
 ${text}
 
-#FaceskyGroupPost #NoPromote`
+#FaceskyGroupPost #NoPromote #PrivateContent`
 
       const rt = new RichText({ text: groupPostText })
       await rt.detectFacets(atClient["agent"])
+
+      // Add a reply-to reference to make this a self-reply
+      const dummyPostResponse = await this.createDummyAnchorPost()
 
       const groupPost = {
         $type: "app.bsky.feed.post",
@@ -229,7 +233,18 @@ ${text}
         createdAt: new Date().toISOString(),
         labels: {
           $type: "com.atproto.label.defs#selfLabels",
-          values: [{ val: "facesky-group-post" }, { val: "no-promote" }],
+          values: [{ val: "facesky-group-post" }, { val: "no-promote" }, { val: "!hide" }, { val: "private" }],
+        },
+        // Make this a reply to our dummy post
+        reply: {
+          root: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
+          parent: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
         },
       }
 
@@ -246,6 +261,7 @@ ${text}
     }
   }
 
+  // Update the postToPage function to use the same approach
   async postToPage(pageUri: string, text: string, images?: File[]): Promise<any> {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
@@ -276,10 +292,13 @@ ${text}
 
 ${text}
 
-#FaceskyPagePost #NoPromote`
+#FaceskyPagePost #NoPromote #PrivateContent`
 
       const rt = new RichText({ text: pagePostText })
       await rt.detectFacets(atClient["agent"])
+
+      // Add a reply-to reference to make this a self-reply
+      const dummyPostResponse = await this.createDummyAnchorPost()
 
       const pagePost = {
         $type: "app.bsky.feed.post",
@@ -289,7 +308,18 @@ ${text}
         createdAt: new Date().toISOString(),
         labels: {
           $type: "com.atproto.label.defs#selfLabels",
-          values: [{ val: "facesky-page-post" }, { val: "no-promote" }],
+          values: [{ val: "facesky-page-post" }, { val: "no-promote" }, { val: "!hide" }, { val: "private" }],
+        },
+        // Make this a reply to our dummy post
+        reply: {
+          root: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
+          parent: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
         },
       }
 
@@ -302,6 +332,108 @@ ${text}
       return response.data
     } catch (error) {
       console.error("Failed to post to page:", error)
+      throw error
+    }
+  }
+
+  // Update the joinGroup function to use the same approach
+  async joinGroup(groupUri: string): Promise<any> {
+    if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
+
+    try {
+      // Create a membership post
+      const joinText = `${GROUP_JOIN_MARKER} ${groupUri}
+
+#FaceskyMembership #NoPromote #PrivateContent`
+
+      const rt = new RichText({ text: joinText })
+      await rt.detectFacets(atClient["agent"])
+
+      // Add a reply-to reference to make this a self-reply
+      const dummyPostResponse = await this.createDummyAnchorPost()
+
+      const joinPost = {
+        $type: "app.bsky.feed.post",
+        text: rt.text,
+        facets: rt.facets,
+        createdAt: new Date().toISOString(),
+        labels: {
+          $type: "com.atproto.label.defs#selfLabels",
+          values: [{ val: "facesky-membership" }, { val: "no-promote" }, { val: "!hide" }, { val: "private" }],
+        },
+        // Make this a reply to our dummy post
+        reply: {
+          root: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
+          parent: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
+        },
+      }
+
+      const response = await atClient["agent"].com.atproto.repo.createRecord({
+        repo: atClient.getSession().did,
+        collection: POST_RECORD_TYPE,
+        record: joinPost,
+      })
+
+      return response.data
+    } catch (error) {
+      console.error("Failed to join group:", error)
+      throw error
+    }
+  }
+
+  // Update the followPage function to use the same approach
+  async followPage(pageUri: string): Promise<any> {
+    if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
+
+    try {
+      // Create a follow post
+      const followText = `${PAGE_FOLLOW_MARKER} ${pageUri}
+
+#FaceskyFollow #NoPromote #PrivateContent`
+
+      const rt = new RichText({ text: followText })
+      await rt.detectFacets(atClient["agent"])
+
+      // Add a reply-to reference to make this a self-reply
+      const dummyPostResponse = await this.createDummyAnchorPost()
+
+      const followPost = {
+        $type: "app.bsky.feed.post",
+        text: rt.text,
+        facets: rt.facets,
+        createdAt: new Date().toISOString(),
+        labels: {
+          $type: "com.atproto.label.defs#selfLabels",
+          values: [{ val: "facesky-follow" }, { val: "no-promote" }, { val: "!hide" }, { val: "private" }],
+        },
+        // Make this a reply to our dummy post
+        reply: {
+          root: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
+          parent: {
+            uri: dummyPostResponse.uri,
+            cid: dummyPostResponse.cid,
+          },
+        },
+      }
+
+      const response = await atClient["agent"].com.atproto.repo.createRecord({
+        repo: atClient.getSession().did,
+        collection: POST_RECORD_TYPE,
+        record: followPost,
+      })
+
+      return response.data
+    } catch (error) {
+      console.error("Failed to follow page:", error)
       throw error
     }
   }
