@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { atGroupsClient } from "@/lib/at-protocol-groups"
 import { atDiscoveryClient } from "@/lib/at-protocol-discovery"
 import { useAuth } from "@/contexts/auth-context"
@@ -12,7 +12,7 @@ export function useGroups() {
   const [error, setError] = useState<string | null>(null)
   const { isAuthenticated } = useAuth()
 
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     if (!isAuthenticated) return
 
     try {
@@ -51,17 +51,21 @@ export function useGroups() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchGroups()
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, fetchGroups])
 
   const createGroup = async (groupData: any) => {
     try {
       const result = await atGroupsClient.createGroup(groupData)
+
+      // Automatically join the group as admin after creating it
+      await atGroupsClient.joinGroup(result.uri, "admin")
+
       await fetchGroups() // Refresh the list
       return result
     } catch (error) {
@@ -73,7 +77,7 @@ export function useGroups() {
   const joinGroup = async (groupUri: string) => {
     try {
       const result = await atGroupsClient.joinGroup(groupUri)
-      await fetchGroups() // Refresh the list
+      await fetchGroups() // Refresh the list immediately
       return result
     } catch (error) {
       console.error("Failed to join group:", error)
@@ -108,7 +112,7 @@ export function useGroupPosts(groupUri: string) {
   const [error, setError] = useState<string | null>(null)
   const { isAuthenticated } = useAuth()
 
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     if (!isAuthenticated || !groupUri) return
 
     try {
@@ -124,18 +128,18 @@ export function useGroupPosts(groupUri: string) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [isAuthenticated, groupUri])
 
   useEffect(() => {
     if (isAuthenticated && groupUri) {
       fetchPosts()
     }
-  }, [isAuthenticated, groupUri])
+  }, [isAuthenticated, groupUri, fetchPosts])
 
   const postToGroup = async (text: string, images?: File[]) => {
     try {
       const result = await atGroupsClient.postToGroup(groupUri, text, images)
-      await fetchPosts() // Refresh posts
+      await fetchPosts() // Refresh posts immediately
       return result
     } catch (error) {
       console.error("Failed to post to group:", error)
@@ -161,7 +165,7 @@ export function useGroupDetails(groupUri: string) {
   const [error, setError] = useState<string | null>(null)
   const { isAuthenticated } = useAuth()
 
-  const fetchGroupDetails = async () => {
+  const fetchGroupDetails = useCallback(async () => {
     if (!isAuthenticated || !groupUri) return
 
     try {
@@ -185,11 +189,11 @@ export function useGroupDetails(groupUri: string) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [groupUri, isAuthenticated])
 
   useEffect(() => {
     fetchGroupDetails()
-  }, [groupUri, isAuthenticated])
+  }, [fetchGroupDetails])
 
   return {
     group,

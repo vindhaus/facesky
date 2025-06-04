@@ -18,7 +18,11 @@ export default function HomePage() {
   }
 
   if (!isAuthenticated) {
-    return <LoginForm />
+    return (
+      <div className="min-h-screen bg-background">
+        <LoginForm />
+      </div>
+    )
   }
 
   return (

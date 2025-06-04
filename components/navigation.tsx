@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Users, FileText, Search, Bell, MessageCircle, LogOut } from "lucide-react"
+import { Home, Users, FileText, Search, Bell, MessageCircle, LogOut, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { useAuth } from "@/contexts/auth-context"
 
 export function Navigation() {
@@ -37,6 +38,8 @@ export function Navigation() {
             <Link href="/" className="text-xl font-bold text-primary">
               Facesky
             </Link>
+
+            {/* Desktop Navigation */}
             <div className="hidden md:flex space-x-1">
               {navItems.map((item) => (
                 <Link key={item.href} href={item.href}>
@@ -51,6 +54,33 @@ export function Navigation() {
                 </Link>
               ))}
             </div>
+
+            {/* Mobile Navigation */}
+            <div className="md:hidden">
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <Menu className="h-5 w-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left">
+                  <SheetHeader>
+                    <SheetTitle>Facesky</SheetTitle>
+                    <SheetDescription>Navigate to different sections</SheetDescription>
+                  </SheetHeader>
+                  <div className="mt-6 space-y-2">
+                    {navItems.map((item) => (
+                      <Link key={item.href} href={item.href}>
+                        <Button variant={pathname === item.href ? "default" : "ghost"} className="w-full justify-start">
+                          <item.icon className="h-4 w-4 mr-2" />
+                          {item.label}
+                        </Button>
+                      </Link>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
           </div>
 
           <div className="flex-1 max-w-md mx-4">
@@ -61,10 +91,10 @@ export function Navigation() {
           </div>
 
           <div className="flex items-center space-x-2">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="hidden sm:flex">
               <MessageCircle className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" className="hidden sm:flex">
               <Bell className="h-5 w-5" />
             </Button>
 

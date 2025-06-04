@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { Users, UserPlus, Bell, Shield } from "lucide-react"
+import { Users, Bell, Shield, Share, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { atGroupsClient } from "@/lib/at-protocol-groups"
@@ -55,6 +55,32 @@ export function GroupHeader({
     }
   }
 
+  const handleInvite = () => {
+    const groupUrl = `${window.location.origin}/groups/${group.uri.split("/").pop()}`
+    navigator.clipboard.writeText(groupUrl)
+    toast({
+      title: "Link copied!",
+      description: "Group link has been copied to your clipboard.",
+    })
+  }
+
+  const handleShare = () => {
+    const groupUrl = `${window.location.origin}/groups/${group.uri.split("/").pop()}`
+    if (navigator.share) {
+      navigator.share({
+        title: `Join ${name} on Facesky`,
+        text: `Check out this group: ${name}`,
+        url: groupUrl,
+      })
+    } else {
+      navigator.clipboard.writeText(groupUrl)
+      toast({
+        title: "Link copied!",
+        description: "Group link has been copied to your clipboard.",
+      })
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="relative rounded-lg overflow-hidden">
@@ -100,13 +126,17 @@ export function GroupHeader({
             </Button>
           ) : (
             <>
+              <Button variant="outline" size="sm" onClick={handleInvite}>
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Link
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleShare}>
+                <Share className="h-4 w-4 mr-2" />
+                Share
+              </Button>
               <Button variant="outline" size="sm">
                 <Bell className="h-4 w-4 mr-2" />
                 Notifications
-              </Button>
-              <Button variant="outline" size="sm">
-                <UserPlus className="h-4 w-4 mr-2" />
-                Invite
               </Button>
             </>
           )}

@@ -1,15 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
-import { Heart, MessageCircle, Share, MoreHorizontal } from "lucide-react"
+import { Heart, MessageCircle, Share, MoreHorizontal, Loader2 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { GroupPageCommentSection } from "@/components/group-page-comment-section"
-import { CommentSection } from "@/components/comment-section"
 import { atClient } from "@/lib/at-protocol"
 import { atGroupsClient } from "@/lib/at-protocol-groups"
 import { useAuth } from "@/contexts/auth-context"
@@ -17,10 +16,11 @@ import { toast } from "@/hooks/use-toast"
 
 interface PostCardProps {
   post: any // AT Protocol post object or mock post
+  showReplies?: boolean // Whether to show nested replies
   onRefresh?: () => void
 }
 
-export function PostCard({ post, onRefresh }: PostCardProps) {
+export function PostCard({ post, showReplies = false, onRefresh }: PostCardProps) {
   // Handle both real AT Protocol posts and mock posts
   const isRealPost = post.uri && post.cid
   const postData = isRealPost ? post : post
@@ -32,14 +32,40 @@ export function PostCard({ post, onRefresh }: PostCardProps) {
   const [showComments, setShowComments] = useState(false)
   const [comment, setComment] = useState("")
   const [likeCount, setLikeCount] = useState(isRealPost ? post.likeCount || 0 : post.likes || 0)
-  const [replyCount, setReplyCount] = useState(0) // Will be updated from comment section
+  const [replyCount, setReplyCount] = useState(isRealPost ? post.replyCount || 0 : 0)
   const [repostCount, setRepostCount] = useState(isRealPost ? post.repostCount || 0 : post.shares || 0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [replies, setReplies] = useState<any[]>([])
+  const [loadingReplies, setLoadingReplies] = useState(false)
   const { user } = useAuth()
 
   // Check if this is a group or page post
   const isGroupPost = post.value && post.value.groupUri
   const isPagePost = post.value && post.value.pageUri
+
+  // Load replies if this is a real post and showReplies is true
+  useEffect(() => {
+    if (isRealPost && showReplies && !isGroupPost && !isPagePost) {
+      loadReplies()
+    }
+  }, [isRealPost, showReplies, post.uri])
+
+  const loadReplies = async () => {
+    if (!isRealPost) return
+
+    setLoadingReplies(true)
+    try {
+      const thread = await atClient.getPostThread(post.uri)
+      if (thread.thread.replies) {
+        setReplies(thread.thread.replies)
+        setReplyCount(thread.thread.replies.length)
+      }
+    } catch (error) {
+      console.error("Failed to load replies:", error)
+    } finally {
+      setLoadingReplies(false)
+    }
+  }
 
   // Update reply count when comments are loaded
   const handleCommentCountUpdate = (count: number) => {
@@ -112,6 +138,11 @@ export function PostCard({ post, onRefresh }: PostCardProps) {
       setReplyCount((prev) => prev + 1)
       setShowComments(true) // Show comments after posting
 
+      // Refresh replies for real posts
+      if (isRealPost && showReplies) {
+        await loadReplies()
+      }
+
       // Refresh the post data if a callback was provided
       if (onRefresh) {
         onRefresh()
@@ -161,6 +192,52 @@ export function PostCard({ post, onRefresh }: PostCardProps) {
 
   const getTimestamp = () => {
     return isRealPost ? post.indexedAt : post.timestamp || post.value?.createdAt
+  }
+
+  const renderReply = (reply: any, depth = 0) => {
+    if (!reply.post) return null
+
+    return (
+      <div key={reply.post.uri} className={`mt-4 ${depth > 0 ? "ml-8" : "ml-4"} border-l-2 border-muted pl-4`}>
+        <div className="flex items-start space-x-3">
+          <Avatar className="h-8 w-8">
+            <AvatarImage
+              src={reply.post.author.avatar || "/placeholder.svg"}
+              alt={reply.post.author.displayName || reply.post.author.handle}
+            />
+            <AvatarFallback>
+              {(reply.post.author.displayName || reply.post.author.handle)
+                .split(" ")
+                .map((n: string) => n[0])
+                .join("")}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 space-y-1">
+            <div className="bg-muted rounded-lg p-3">
+              <div className="flex items-center space-x-2 mb-1">
+                <span className="font-semibold text-sm">
+                  {reply.post.author.displayName || reply.post.author.handle}
+                </span>
+                <span className="text-xs text-muted-foreground">{formatDate(reply.post.indexedAt)}</span>
+              </div>
+              <p className="text-sm whitespace-pre-wrap">{reply.post.record.text}</p>
+            </div>
+            <div className="flex items-center space-x-4 px-3">
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                <Heart className="h-3 w-3 mr-1" />
+                {reply.post.likeCount || 0}
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                <MessageCircle className="h-3 w-3 mr-1" />
+                Reply
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {reply.replies?.map((nestedReply: any) => renderReply(nestedReply, depth + 1))}
+      </div>
+    )
   }
 
   return (
@@ -274,20 +351,28 @@ export function PostCard({ post, onRefresh }: PostCardProps) {
           </div>
         </div>
 
-        {showComments && (
-          <>
-            {isGroupPost || isPagePost ? (
-              <GroupPageCommentSection
-                postUri={post.uri}
-                isGroupPost={isGroupPost}
-                isPagePost={isPagePost}
-                onRefresh={onRefresh}
-                onCommentCountUpdate={handleCommentCountUpdate}
-              />
+        {/* Show nested replies for real posts */}
+        {showReplies && isRealPost && !isGroupPost && !isPagePost && (
+          <div className="space-y-2">
+            {loadingReplies ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
             ) : (
-              isRealPost && <CommentSection postUri={post.uri} />
+              replies.map((reply: any) => renderReply(reply))
             )}
-          </>
+          </div>
+        )}
+
+        {/* Show comments for group/page posts */}
+        {showComments && (isGroupPost || isPagePost) && (
+          <GroupPageCommentSection
+            postUri={post.uri}
+            isGroupPost={isGroupPost}
+            isPagePost={isPagePost}
+            onRefresh={onRefresh}
+            onCommentCountUpdate={handleCommentCountUpdate}
+          />
         )}
       </CardContent>
     </Card>

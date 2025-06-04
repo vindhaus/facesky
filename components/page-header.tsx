@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { Users, MapPin, ExternalLink, CheckCircle, Bell, Share, Shield } from "lucide-react"
+import { Users, MapPin, ExternalLink, CheckCircle, Bell, Share, Shield, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { atGroupsClient } from "@/lib/at-protocol-groups"
@@ -54,6 +54,32 @@ export function PageHeader({
       })
     } finally {
       setFollowing(false)
+    }
+  }
+
+  const handleInvite = () => {
+    const pageUrl = `${window.location.origin}/pages/${page.uri.split("/").pop()}`
+    navigator.clipboard.writeText(pageUrl)
+    toast({
+      title: "Link copied!",
+      description: "Page link has been copied to your clipboard.",
+    })
+  }
+
+  const handleShare = () => {
+    const pageUrl = `${window.location.origin}/pages/${page.uri.split("/").pop()}`
+    if (navigator.share) {
+      navigator.share({
+        title: `Follow ${name} on Facesky`,
+        text: `Check out this page: ${name}`,
+        url: pageUrl,
+      })
+    } else {
+      navigator.clipboard.writeText(pageUrl)
+      toast({
+        title: "Link copied!",
+        description: "Page link has been copied to your clipboard.",
+      })
     }
   }
 
@@ -116,16 +142,20 @@ export function PageHeader({
               {isFollowing ? "Following" : following ? "Following..." : "Follow"}
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={handleInvite}>
+            <Copy className="h-4 w-4 mr-2" />
+            Copy Link
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleShare}>
+            <Share className="h-4 w-4 mr-2" />
+            Share
+          </Button>
           {isFollowing && (
             <Button variant="outline" size="sm">
               <Bell className="h-4 w-4 mr-2" />
               Notifications
             </Button>
           )}
-          <Button variant="outline" size="sm">
-            <Share className="h-4 w-4 mr-2" />
-            Share
-          </Button>
         </div>
       </div>
     </div>

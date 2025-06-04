@@ -31,10 +31,22 @@ export function Feed() {
     )
   }
 
+  // Filter out replies from the main feed - they'll be shown nested under original posts
+  const mainPosts = posts.filter((feedItem) => {
+    const post = feedItem.post
+    // Only show posts that are not replies to other posts
+    return !post.record.reply
+  })
+
   return (
     <div className="space-y-6">
-      {posts.map((feedItem, index) => (
-        <PostCard key={`${feedItem.post.uri}-${index}`} post={feedItem.post} />
+      {mainPosts.map((feedItem, index) => (
+        <PostCard
+          key={`${feedItem.post.uri}-${index}`}
+          post={feedItem.post}
+          showReplies={true} // Enable nested replies
+          onRefresh={refresh}
+        />
       ))}
 
       {hasMore && (

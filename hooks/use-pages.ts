@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { atGroupsClient } from "@/lib/at-protocol-groups"
 import { atDiscoveryClient } from "@/lib/at-protocol-discovery"
 import { useAuth } from "@/contexts/auth-context"
@@ -12,7 +12,7 @@ export function usePages() {
   const [error, setError] = useState<string | null>(null)
   const { isAuthenticated } = useAuth()
 
-  const fetchPages = async () => {
+  const fetchPages = useCallback(async () => {
     if (!isAuthenticated) return
 
     try {
@@ -51,18 +51,18 @@ export function usePages() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [isAuthenticated])
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchPages()
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, fetchPages])
 
   const createPage = async (pageData: any) => {
     try {
       const result = await atGroupsClient.createPage(pageData)
-      await fetchPages() // Refresh the list
+      await fetchPages() // Refresh the list immediately
       return result
     } catch (error) {
       console.error("Failed to create page:", error)
@@ -73,7 +73,7 @@ export function usePages() {
   const followPage = async (pageUri: string) => {
     try {
       const result = await atGroupsClient.followPage(pageUri)
-      await fetchPages() // Refresh the list
+      await fetchPages() // Refresh the list immediately
       return result
     } catch (error) {
       console.error("Failed to follow page:", error)
@@ -108,7 +108,7 @@ export function usePagePosts(pageUri: string) {
   const [error, setError] = useState<string | null>(null)
   const { isAuthenticated } = useAuth()
 
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     if (!isAuthenticated || !pageUri) return
 
     try {
@@ -124,18 +124,18 @@ export function usePagePosts(pageUri: string) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [isAuthenticated, pageUri])
 
   useEffect(() => {
     if (isAuthenticated && pageUri) {
       fetchPosts()
     }
-  }, [isAuthenticated, pageUri])
+  }, [isAuthenticated, pageUri, fetchPosts])
 
   const postToPage = async (text: string, images?: File[]) => {
     try {
       const result = await atGroupsClient.postToPage(pageUri, text, images)
-      await fetchPosts() // Refresh posts
+      await fetchPosts() // Refresh posts immediately
       return result
     } catch (error) {
       console.error("Failed to post to page:", error)
@@ -161,7 +161,7 @@ export function usePageDetails(pageUri: string) {
   const [error, setError] = useState<string | null>(null)
   const { isAuthenticated } = useAuth()
 
-  const fetchPageDetails = async () => {
+  const fetchPageDetails = useCallback(async () => {
     if (!isAuthenticated || !pageUri) return
 
     try {
@@ -185,11 +185,11 @@ export function usePageDetails(pageUri: string) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [pageUri, isAuthenticated])
 
   useEffect(() => {
     fetchPageDetails()
-  }, [pageUri, isAuthenticated])
+  }, [fetchPageDetails])
 
   return {
     page,
