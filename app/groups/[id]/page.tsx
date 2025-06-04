@@ -20,13 +20,15 @@ export default function GroupPage() {
   // Set up the group URI once we have the authenticated user's DID
   useEffect(() => {
     if (isAuthenticated && id) {
-      // This is a simplified approach - in a real app, you'd need to look up the full URI
+      // Since we're using regular posts, the URI should be a post URI, not a custom collection
+      // The id parameter should be the rkey from the post URI
       const userDid = localStorage.getItem("at-session")
         ? JSON.parse(localStorage.getItem("at-session") || "{}").did
         : ""
 
       if (userDid) {
-        setGroupUri(`at://${userDid}/app.atsocial.group/${id}`)
+        // Construct the actual post URI using the standard post collection
+        setGroupUri(`at://${userDid}/app.bsky.feed.post/${id}`)
       }
     }
   }, [isAuthenticated, id])

@@ -85,7 +85,7 @@ export function PageCard({ page }: PageCardProps) {
 
       <CardFooter className="p-4 pt-0">
         <div className="flex space-x-2 w-full">
-          <Link href={`/pages/${pageId}`} className="flex-1">
+          <Link href={`/pages/${pageUri.split("/").pop()}`} className="flex-1">
             <Button variant="outline" className="w-full">
               View Page
             </Button>

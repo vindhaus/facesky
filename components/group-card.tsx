@@ -86,7 +86,7 @@ export function GroupCard({ group }: GroupCardProps) {
         <div className="flex space-x-2 w-full">
           {isJoined ? (
             <>
-              <Link href={`/groups/${groupId}`} className="flex-1">
+              <Link href={`/groups/${groupUri.split("/").pop()}`} className="flex-1">
                 <Button variant="default" className="w-full">
                   View Group
                 </Button>
