@@ -183,6 +183,244 @@ export class ATProtocolDiscoveryClient {
       return []
     }
   }
+
+  async getGroupPostsAcrossNetwork(groupUri: string): Promise<any[]> {
+    try {
+      const users = await this.discoverUsers()
+      const allPosts: any[] = []
+
+      // Query each user's repository for posts that reference this group
+      for (const userDid of users) {
+        try {
+          const response = await atClient["agent"].com.atproto.repo.listRecords({
+            repo: userDid,
+            collection: "app.bsky.feed.post",
+            limit: 50,
+          })
+
+          // Filter posts that reference this group
+          const groupPosts = response.data.records.filter(
+            (record: any) => record.value.text && record.value.text.includes(groupUri),
+          )
+
+          // Add author context
+          const postsWithContext = await Promise.all(
+            groupPosts.map(async (record: any) => {
+              try {
+                const authorProfile = await atClient["agent"].getProfile({ actor: userDid })
+                return {
+                  ...record,
+                  author: {
+                    did: userDid,
+                    handle: authorProfile.data.handle,
+                    displayName: authorProfile.data.displayName,
+                    avatar: authorProfile.data.avatar,
+                  },
+                }
+              } catch (error) {
+                return {
+                  ...record,
+                  author: {
+                    did: userDid,
+                    handle: userDid,
+                    displayName: "Unknown User",
+                    avatar: null,
+                  },
+                }
+              }
+            }),
+          )
+
+          allPosts.push(...postsWithContext)
+        } catch (error) {
+          console.log(`No group posts found for user ${userDid}`)
+        }
+      }
+
+      // Sort posts by creation date (newest first)
+      allPosts.sort((a, b) => new Date(b.value.createdAt).getTime() - new Date(a.value.createdAt).getTime())
+
+      return allPosts
+    } catch (error) {
+      console.error("Failed to get group posts across network:", error)
+      return []
+    }
+  }
+
+  async getPagePostsAcrossNetwork(pageUri: string): Promise<any[]> {
+    try {
+      const users = await this.discoverUsers()
+      const allPosts: any[] = []
+
+      // Query each user's repository for posts that reference this page
+      for (const userDid of users) {
+        try {
+          const response = await atClient["agent"].com.atproto.repo.listRecords({
+            repo: userDid,
+            collection: "app.bsky.feed.post",
+            limit: 50,
+          })
+
+          // Filter posts that reference this page
+          const pagePosts = response.data.records.filter(
+            (record: any) => record.value.text && record.value.text.includes(pageUri),
+          )
+
+          // Add author context
+          const postsWithContext = await Promise.all(
+            pagePosts.map(async (record: any) => {
+              try {
+                const authorProfile = await atClient["agent"].getProfile({ actor: userDid })
+                return {
+                  ...record,
+                  author: {
+                    did: userDid,
+                    handle: authorProfile.data.handle,
+                    displayName: authorProfile.data.displayName,
+                    avatar: authorProfile.data.avatar,
+                  },
+                }
+              } catch (error) {
+                return {
+                  ...record,
+                  author: {
+                    did: userDid,
+                    handle: userDid,
+                    displayName: "Unknown User",
+                    avatar: null,
+                  },
+                }
+              }
+            }),
+          )
+
+          allPosts.push(...postsWithContext)
+        } catch (error) {
+          console.log(`No page posts found for user ${userDid}`)
+        }
+      }
+
+      // Sort posts by creation date (newest first)
+      allPosts.sort((a, b) => new Date(b.value.createdAt).getTime() - new Date(a.value.createdAt).getTime())
+
+      return allPosts
+    } catch (error) {
+      console.error("Failed to get page posts across network:", error)
+      return []
+    }
+  }
+
+  async getGroupMembersCount(groupUri: string): Promise<number> {
+    try {
+      const users = await this.discoverUsers()
+      let memberCount = 0
+
+      // Count membership posts across all users
+      for (const userDid of users) {
+        try {
+          const response = await atClient["agent"].com.atproto.repo.listRecords({
+            repo: userDid,
+            collection: "app.bsky.feed.post",
+            limit: 100,
+          })
+
+          const memberships = response.data.records.filter(
+            (record: any) =>
+              record.value.text &&
+              record.value.text.startsWith("👥 JOINED GROUP:") &&
+              record.value.text.includes(groupUri),
+          )
+
+          memberCount += memberships.length
+        } catch (error) {
+          // User might not have any memberships
+        }
+      }
+
+      return memberCount
+    } catch (error) {
+      console.error("Failed to count group members:", error)
+      return 0
+    }
+  }
+
+  async getPageFollowersCount(pageUri: string): Promise<number> {
+    try {
+      const users = await this.discoverUsers()
+      let followerCount = 0
+
+      // Count follow posts across all users
+      for (const userDid of users) {
+        try {
+          const response = await atClient["agent"].com.atproto.repo.listRecords({
+            repo: userDid,
+            collection: "app.bsky.feed.post",
+            limit: 100,
+          })
+
+          const follows = response.data.records.filter(
+            (record: any) =>
+              record.value.text &&
+              record.value.text.startsWith("👁️ FOLLOWING PAGE:") &&
+              record.value.text.includes(pageUri),
+          )
+
+          followerCount += follows.length
+        } catch (error) {
+          // User might not have any follows
+        }
+      }
+
+      return followerCount
+    } catch (error) {
+      console.error("Failed to count page followers:", error)
+      return 0
+    }
+  }
+
+  async isUserMemberOfGroup(groupUri: string, userDid?: string): Promise<boolean> {
+    try {
+      const session = atClient.getSession()
+      const targetUser = userDid || session?.did
+      if (!targetUser) return false
+
+      const response = await atClient["agent"].com.atproto.repo.listRecords({
+        repo: targetUser,
+        collection: "app.bsky.feed.post",
+        limit: 100,
+      })
+
+      return response.data.records.some(
+        (record: any) =>
+          record.value.text && record.value.text.startsWith("👥 JOINED GROUP:") && record.value.text.includes(groupUri),
+      )
+    } catch (error) {
+      console.error("Failed to check group membership:", error)
+      return false
+    }
+  }
+
+  async isUserFollowingPage(pageUri: string, userDid?: string): Promise<boolean> {
+    try {
+      const session = atClient.getSession()
+      const targetUser = userDid || session?.did
+      if (!targetUser) return false
+
+      const response = await atClient["agent"].com.atproto.repo.listRecords({
+        repo: targetUser,
+        collection: "app.bsky.feed.post",
+        limit: 100,
+      })
+
+      return response.data.records.some(
+        (record: any) =>
+          record.value.text && record.value.text.startsWith("👁️ FOLLOWING PAGE:") && record.value.text.includes(pageUri),
+      )
+    } catch (error) {
+      console.error("Failed to check page follow:", error)
+      return false
+    }
+  }
 }
 
 export const atDiscoveryClient = new ATProtocolDiscoveryClient()

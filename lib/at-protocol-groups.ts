@@ -423,6 +423,211 @@ export class ATProtocolGroupsClient {
     }
   }
 
+  async getUserMemberships(): Promise<any[]> {
+    try {
+      const session = atClient.getSession()
+      if (!session) return []
+
+      // Get posts from the user's repo that indicate group memberships
+      const response = await atClient["agent"].com.atproto.repo.listRecords({
+        repo: session.did,
+        collection: POST_RECORD_TYPE,
+        limit: 100,
+      })
+
+      // Filter for group membership posts
+      const membershipPosts = response.data.records.filter(
+        (record: any) => record.value.text && record.value.text.startsWith(GROUP_MEMBER_PREFIX),
+      )
+
+      return membershipPosts.map((record: any) => ({
+        uri: record.uri,
+        value: {
+          groupUri: record.value.text.replace(GROUP_MEMBER_PREFIX, "").trim(),
+          role: "member",
+          joinedAt: record.value.createdAt,
+        },
+      }))
+    } catch (error) {
+      console.error("Failed to fetch user memberships:", error)
+      return []
+    }
+  }
+
+  async getUserPageFollows(): Promise<any[]> {
+    try {
+      const session = atClient.getSession()
+      if (!session) return []
+
+      // Get posts from the user's repo that indicate page follows
+      const response = await atClient["agent"].com.atproto.repo.listRecords({
+        repo: session.did,
+        collection: POST_RECORD_TYPE,
+        limit: 100,
+      })
+
+      // Filter for page follow posts
+      const followPosts = response.data.records.filter(
+        (record: any) => record.value.text && record.value.text.startsWith(PAGE_FOLLOW_PREFIX),
+      )
+
+      return followPosts.map((record: any) => ({
+        uri: record.uri,
+        value: {
+          pageUri: record.value.text.replace(PAGE_FOLLOW_PREFIX, "").trim(),
+          followedAt: record.value.createdAt,
+        },
+      }))
+    } catch (error) {
+      console.error("Failed to fetch user page follows:", error)
+      return []
+    }
+  }
+
+  async getGroup(uri: string): Promise<any> {
+    try {
+      const [repo, collection, rkey] = uri.replace("at://", "").split("/")
+
+      const response = await atClient["agent"].com.atproto.repo.getRecord({
+        repo,
+        collection,
+        rkey,
+      })
+
+      // Parse the group data from the post text
+      const text = response.data.value.text
+      const lines = text.split("\n")
+      const name = lines[0].replace(GROUP_POST_PREFIX, "").trim()
+      const description = lines.slice(2).join("\n").trim()
+
+      return {
+        value: {
+          name,
+          description,
+          privacy: text.includes("Privacy: private") ? "private" : "public",
+          createdAt: response.data.value.createdAt,
+          admins: [repo], // The repo owner is the admin
+        },
+      }
+    } catch (error) {
+      console.error("Failed to fetch group:", error)
+      throw error
+    }
+  }
+
+  async getPage(uri: string): Promise<any> {
+    try {
+      const [repo, collection, rkey] = uri.replace("at://", "").split("/")
+
+      const response = await atClient["agent"].com.atproto.repo.getRecord({
+        repo,
+        collection,
+        rkey,
+      })
+
+      // Parse the page data from the post text
+      const text = response.data.value.text
+      const lines = text.split("\n")
+      const name = lines[0].replace(PAGE_POST_PREFIX, "").trim()
+      const description = lines.slice(2).join("\n").trim()
+
+      return {
+        value: {
+          name,
+          description,
+          category: "General", // Could parse from text if needed
+          createdAt: response.data.value.createdAt,
+          admins: [repo], // The repo owner is the admin
+        },
+      }
+    } catch (error) {
+      console.error("Failed to fetch page:", error)
+      throw error
+    }
+  }
+
+  async commentOnGroupPost(groupPostUri: string, text: string, parentCommentUri?: string): Promise<any> {
+    if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
+
+    try {
+      const session = atClient.getSession()
+
+      // Create a reply post
+      const replyPost = {
+        $type: POST_RECORD_TYPE,
+        text: text,
+        createdAt: new Date().toISOString(),
+        reply: {
+          root: { uri: groupPostUri, cid: "placeholder" }, // In real implementation, you'd need the actual CID
+          parent: { uri: parentCommentUri || groupPostUri, cid: "placeholder" },
+        },
+      }
+
+      const response = await atClient["agent"].com.atproto.repo.createRecord({
+        repo: session.did,
+        collection: POST_RECORD_TYPE,
+        record: replyPost,
+      })
+
+      return response.data
+    } catch (error) {
+      console.error("Failed to comment on group post:", error)
+      throw error
+    }
+  }
+
+  async commentOnPagePost(pagePostUri: string, text: string, parentCommentUri?: string): Promise<any> {
+    if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
+
+    try {
+      const session = atClient.getSession()
+
+      // Create a reply post
+      const replyPost = {
+        $type: POST_RECORD_TYPE,
+        text: text,
+        createdAt: new Date().toISOString(),
+        reply: {
+          root: { uri: pagePostUri, cid: "placeholder" }, // In real implementation, you'd need the actual CID
+          parent: { uri: parentCommentUri || pagePostUri, cid: "placeholder" },
+        },
+      }
+
+      const response = await atClient["agent"].com.atproto.repo.createRecord({
+        repo: session.did,
+        collection: POST_RECORD_TYPE,
+        record: replyPost,
+      })
+
+      return response.data
+    } catch (error) {
+      console.error("Failed to comment on page post:", error)
+      throw error
+    }
+  }
+
+  async getGroupPostComments(groupPostUri: string): Promise<any[]> {
+    try {
+      // In a real implementation, you'd need to query for replies to the specific post
+      // For now, return empty array since AT Protocol doesn't have a direct way to query replies
+      return []
+    } catch (error) {
+      console.error("Failed to get group post comments:", error)
+      return []
+    }
+  }
+
+  async getPagePostComments(pagePostUri: string): Promise<any[]> {
+    try {
+      // In a real implementation, you'd need to query for replies to the specific post
+      // For now, return empty array since AT Protocol doesn't have a direct way to query replies
+      return []
+    } catch (error) {
+      console.error("Failed to get page post comments:", error)
+      return []
+    }
+  }
+
   getSession() {
     return atClient.getSession()
   }
