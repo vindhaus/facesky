@@ -1,5 +1,12 @@
 import { atClient } from "./at-protocol"
-import { GROUP_POST_PREFIX, PAGE_POST_PREFIX, POST_RECORD_TYPE } from "./at-protocol-groups"
+import {
+  GROUP_MARKER,
+  PAGE_MARKER,
+  GROUP_POST_MARKER,
+  PAGE_POST_MARKER,
+  GROUP_JOIN_MARKER,
+  PAGE_FOLLOW_MARKER,
+} from "./at-protocol-groups"
 
 export class ATProtocolDiscoveryClient {
   async discoverUsers(): Promise<string[]> {
@@ -38,13 +45,13 @@ export class ATProtocolDiscoveryClient {
         try {
           const response = await atClient["agent"].com.atproto.repo.listRecords({
             repo: userDid,
-            collection: POST_RECORD_TYPE,
+            collection: "app.bsky.feed.post",
             limit: 50,
           })
 
           // Filter for group definition posts
           const groupPosts = response.data.records.filter(
-            (record: any) => record.value.text && record.value.text.startsWith(GROUP_POST_PREFIX),
+            (record: any) => record.value.text && record.value.text.startsWith(GROUP_MARKER),
           )
 
           // Transform into group format with creator info
@@ -54,8 +61,9 @@ export class ATProtocolDiscoveryClient {
                 const authorProfile = await atClient["agent"].getProfile({ actor: userDid })
                 const text = record.value.text
                 const lines = text.split("\n")
-                const name = lines[0].replace(GROUP_POST_PREFIX, "").trim()
-                const description = lines.slice(2).join("\n").trim()
+                const name = lines[0].replace(GROUP_MARKER, "").trim()
+                const description = lines[2] || ""
+                const privacy = text.includes("Privacy: private") ? "private" : "public"
 
                 return {
                   uri: record.uri,
@@ -63,7 +71,7 @@ export class ATProtocolDiscoveryClient {
                   value: {
                     name,
                     description,
-                    privacy: text.includes("Privacy: private") ? "private" : "public",
+                    privacy,
                     createdAt: record.value.createdAt,
                     creator: userDid,
                   },
@@ -103,13 +111,13 @@ export class ATProtocolDiscoveryClient {
         try {
           const response = await atClient["agent"].com.atproto.repo.listRecords({
             repo: userDid,
-            collection: POST_RECORD_TYPE,
+            collection: "app.bsky.feed.post",
             limit: 50,
           })
 
           // Filter for page definition posts
           const pagePosts = response.data.records.filter(
-            (record: any) => record.value.text && record.value.text.startsWith(PAGE_POST_PREFIX),
+            (record: any) => record.value.text && record.value.text.startsWith(PAGE_MARKER),
           )
 
           // Transform into page format with creator info
@@ -119,8 +127,9 @@ export class ATProtocolDiscoveryClient {
                 const authorProfile = await atClient["agent"].getProfile({ actor: userDid })
                 const text = record.value.text
                 const lines = text.split("\n")
-                const name = lines[0].replace(PAGE_POST_PREFIX, "").trim()
-                const description = lines.slice(2).join("\n").trim()
+                const name = lines[0].replace(PAGE_MARKER, "").trim()
+                const description = lines[2] || ""
+                const category = text.match(/Category: (.+)/)?.[1] || "General"
 
                 return {
                   uri: record.uri,
@@ -128,7 +137,7 @@ export class ATProtocolDiscoveryClient {
                   value: {
                     name,
                     description,
-                    category: "General",
+                    category,
                     createdAt: record.value.createdAt,
                     creator: userDid,
                   },
@@ -200,16 +209,26 @@ export class ATProtocolDiscoveryClient {
 
           // Filter posts that reference this group
           const groupPosts = response.data.records.filter(
-            (record: any) => record.value.text && record.value.text.includes(groupUri),
+            (record: any) => record.value.text && record.value.text.includes(`${GROUP_POST_MARKER} ${groupUri}`),
           )
 
-          // Add author context
+          // Add author context and clean up content
           const postsWithContext = await Promise.all(
             groupPosts.map(async (record: any) => {
               try {
                 const authorProfile = await atClient["agent"].getProfile({ actor: userDid })
+
+                // Extract clean content (remove markers)
+                const lines = record.value.text.split("\n")
+                const contentLines = lines.slice(2, -2) // Remove marker and hashtags
+                const actualContent = contentLines.join("\n").trim()
+
                 return {
                   ...record,
+                  value: {
+                    ...record.value,
+                    text: actualContent, // Show clean content
+                  },
                   author: {
                     did: userDid,
                     handle: authorProfile.data.handle,
@@ -263,16 +282,26 @@ export class ATProtocolDiscoveryClient {
 
           // Filter posts that reference this page
           const pagePosts = response.data.records.filter(
-            (record: any) => record.value.text && record.value.text.includes(pageUri),
+            (record: any) => record.value.text && record.value.text.includes(`${PAGE_POST_MARKER} ${pageUri}`),
           )
 
-          // Add author context
+          // Add author context and clean up content
           const postsWithContext = await Promise.all(
             pagePosts.map(async (record: any) => {
               try {
                 const authorProfile = await atClient["agent"].getProfile({ actor: userDid })
+
+                // Extract clean content (remove markers)
+                const lines = record.value.text.split("\n")
+                const contentLines = lines.slice(2, -2) // Remove marker and hashtags
+                const actualContent = contentLines.join("\n").trim()
+
                 return {
                   ...record,
+                  value: {
+                    ...record.value,
+                    text: actualContent, // Show clean content
+                  },
                   author: {
                     did: userDid,
                     handle: authorProfile.data.handle,
@@ -327,7 +356,7 @@ export class ATProtocolDiscoveryClient {
           const memberships = response.data.records.filter(
             (record: any) =>
               record.value.text &&
-              record.value.text.startsWith("👥 JOINED GROUP:") &&
+              record.value.text.startsWith(GROUP_JOIN_MARKER) &&
               record.value.text.includes(groupUri),
           )
 
@@ -337,10 +366,10 @@ export class ATProtocolDiscoveryClient {
         }
       }
 
-      return memberCount
+      return Math.max(memberCount, 1) // At least the creator
     } catch (error) {
       console.error("Failed to count group members:", error)
-      return 0
+      return 1
     }
   }
 
@@ -361,7 +390,7 @@ export class ATProtocolDiscoveryClient {
           const follows = response.data.records.filter(
             (record: any) =>
               record.value.text &&
-              record.value.text.startsWith("👁️ FOLLOWING PAGE:") &&
+              record.value.text.startsWith(PAGE_FOLLOW_MARKER) &&
               record.value.text.includes(pageUri),
           )
 
@@ -371,10 +400,10 @@ export class ATProtocolDiscoveryClient {
         }
       }
 
-      return followerCount
+      return Math.max(followerCount, 1) // At least the creator
     } catch (error) {
       console.error("Failed to count page followers:", error)
-      return 0
+      return 1
     }
   }
 
@@ -392,7 +421,7 @@ export class ATProtocolDiscoveryClient {
 
       return response.data.records.some(
         (record: any) =>
-          record.value.text && record.value.text.startsWith("👥 JOINED GROUP:") && record.value.text.includes(groupUri),
+          record.value.text && record.value.text.startsWith(GROUP_JOIN_MARKER) && record.value.text.includes(groupUri),
       )
     } catch (error) {
       console.error("Failed to check group membership:", error)
@@ -414,7 +443,7 @@ export class ATProtocolDiscoveryClient {
 
       return response.data.records.some(
         (record: any) =>
-          record.value.text && record.value.text.startsWith("👁️ FOLLOWING PAGE:") && record.value.text.includes(pageUri),
+          record.value.text && record.value.text.startsWith(PAGE_FOLLOW_MARKER) && record.value.text.includes(pageUri),
       )
     } catch (error) {
       console.error("Failed to check page follow:", error)

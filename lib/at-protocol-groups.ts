@@ -1,24 +1,21 @@
 import { atClient } from "./at-protocol"
+import { RichText } from "@atproto/api"
 
-// Use existing AT Protocol record types
+// Use existing AT Protocol record types only
 export const POST_RECORD_TYPE = "app.bsky.feed.post"
-export const FOLLOW_RECORD_TYPE = "app.bsky.graph.follow"
-export const PROFILE_RECORD_TYPE = "app.bsky.actor.profile"
 
-// Use app.bsky.graph.list for groups/pages (lists don't appear in feeds)
-export const LIST_RECORD_TYPE = "app.bsky.graph.list"
-
-// Special list purposes for our groups and pages
-export const GROUP_LIST_PURPOSE = "app.facesky.group"
-export const PAGE_LIST_PURPOSE = "app.facesky.page"
+// Use special text markers to identify our content
+export const GROUP_MARKER = "🏢 FACESKY-GROUP:"
+export const PAGE_MARKER = "📄 FACESKY-PAGE:"
+export const GROUP_POST_MARKER = "👥 GROUP-POST:"
+export const PAGE_POST_MARKER = "📰 PAGE-POST:"
+export const GROUP_JOIN_MARKER = "🤝 JOINED-GROUP:"
+export const PAGE_FOLLOW_MARKER = "👁️ FOLLOWING-PAGE:"
 
 export interface GroupData {
   name: string
   description: string
   privacy: "public" | "private"
-  image?: string
-  createdAt: string
-  creator: string
   rules?: string
 }
 
@@ -26,34 +23,45 @@ export interface PageData {
   name: string
   description: string
   category: string
-  image?: string
   website?: string
   location?: string
-  createdAt: string
-  creator: string
 }
 
 export class ATProtocolGroupsClient {
-  async createGroup(data: Omit<GroupData, "createdAt" | "creator">): Promise<any> {
+  async createGroup(data: GroupData): Promise<any> {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
     try {
-      const session = atClient.getSession()
+      // Create a special post that defines the group
+      // This post will be hidden from main feeds using labels
+      const groupText = `${GROUP_MARKER} ${data.name}
 
-      // Create a list record for the group (lists don't appear in feeds)
-      const groupList = {
-        $type: "app.bsky.graph.list",
-        name: data.name,
-        description: `${data.description}\n\n---FACESKY-GROUP---\nPrivacy: ${data.privacy}${data.rules ? `\nRules: ${data.rules}` : ""}`,
-        purpose: GROUP_LIST_PURPOSE,
-        avatar: data.image ? await this.uploadImageBlob(data.image) : undefined,
+${data.description}
+
+Privacy: ${data.privacy}
+${data.rules ? `Rules: ${data.rules}` : ""}
+
+#FaceskyGroup #NoPromote`
+
+      const rt = new RichText({ text: groupText })
+      await rt.detectFacets(atClient["agent"])
+
+      const groupPost = {
+        $type: "app.bsky.feed.post",
+        text: rt.text,
+        facets: rt.facets,
         createdAt: new Date().toISOString(),
+        // Use self-labels to keep this out of main feeds
+        labels: {
+          $type: "com.atproto.label.defs#selfLabels",
+          values: [{ val: "facesky-group" }, { val: "no-promote" }],
+        },
       }
 
       const response = await atClient["agent"].com.atproto.repo.createRecord({
-        repo: session.did,
-        collection: LIST_RECORD_TYPE,
-        record: groupList,
+        repo: atClient.getSession().did,
+        collection: POST_RECORD_TYPE,
+        record: groupPost,
       })
 
       return response.data
@@ -63,26 +71,40 @@ export class ATProtocolGroupsClient {
     }
   }
 
-  async createPage(data: Omit<PageData, "createdAt" | "creator">): Promise<any> {
+  async createPage(data: PageData): Promise<any> {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
     try {
-      const session = atClient.getSession()
+      // Create a special post that defines the page
+      const pageText = `${PAGE_MARKER} ${data.name}
 
-      // Create a list record for the page (lists don't appear in feeds)
-      const pageList = {
-        $type: "app.bsky.graph.list",
-        name: data.name,
-        description: `${data.description}\n\n---FACESKY-PAGE---\nCategory: ${data.category}${data.website ? `\nWebsite: ${data.website}` : ""}${data.location ? `\nLocation: ${data.location}` : ""}`,
-        purpose: PAGE_LIST_PURPOSE,
-        avatar: data.image ? await this.uploadImageBlob(data.image) : undefined,
+${data.description}
+
+Category: ${data.category}
+${data.website ? `Website: ${data.website}` : ""}
+${data.location ? `Location: ${data.location}` : ""}
+
+#FaceskyPage #NoPromote`
+
+      const rt = new RichText({ text: pageText })
+      await rt.detectFacets(atClient["agent"])
+
+      const pagePost = {
+        $type: "app.bsky.feed.post",
+        text: rt.text,
+        facets: rt.facets,
         createdAt: new Date().toISOString(),
+        // Use self-labels to keep this out of main feeds
+        labels: {
+          $type: "com.atproto.label.defs#selfLabels",
+          values: [{ val: "facesky-page" }, { val: "no-promote" }],
+        },
       }
 
       const response = await atClient["agent"].com.atproto.repo.createRecord({
-        repo: session.did,
-        collection: LIST_RECORD_TYPE,
-        record: pageList,
+        repo: atClient.getSession().did,
+        collection: POST_RECORD_TYPE,
+        record: pagePost,
       })
 
       return response.data
@@ -92,39 +114,33 @@ export class ATProtocolGroupsClient {
     }
   }
 
-  private async uploadImageBlob(imageUrl: string): Promise<any> {
-    try {
-      // If it's already a blob reference, return it
-      if (typeof imageUrl === "object" && imageUrl.$type) {
-        return imageUrl
-      }
-
-      // For now, return undefined - in a real implementation you'd convert URL to blob
-      return undefined
-    } catch (error) {
-      console.error("Failed to upload image:", error)
-      return undefined
-    }
-  }
-
   async joinGroup(groupUri: string): Promise<any> {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
     try {
-      const session = atClient.getSession()
+      // Create a membership post
+      const joinText = `${GROUP_JOIN_MARKER} ${groupUri}
 
-      // Create a listitem record (adds user to the group list)
-      const listItem = {
-        $type: "app.bsky.graph.listitem",
-        subject: session.did,
-        list: groupUri,
+#FaceskyMembership #NoPromote`
+
+      const rt = new RichText({ text: joinText })
+      await rt.detectFacets(atClient["agent"])
+
+      const joinPost = {
+        $type: "app.bsky.feed.post",
+        text: rt.text,
+        facets: rt.facets,
         createdAt: new Date().toISOString(),
+        labels: {
+          $type: "com.atproto.label.defs#selfLabels",
+          values: [{ val: "facesky-membership" }, { val: "no-promote" }],
+        },
       }
 
       const response = await atClient["agent"].com.atproto.repo.createRecord({
-        repo: session.did,
-        collection: "app.bsky.graph.listitem",
-        record: listItem,
+        repo: atClient.getSession().did,
+        collection: POST_RECORD_TYPE,
+        record: joinPost,
       })
 
       return response.data
@@ -138,20 +154,29 @@ export class ATProtocolGroupsClient {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
     try {
-      const session = atClient.getSession()
+      // Create a follow post
+      const followText = `${PAGE_FOLLOW_MARKER} ${pageUri}
 
-      // Create a listitem record (adds user to the page followers list)
-      const listItem = {
-        $type: "app.bsky.graph.listitem",
-        subject: session.did,
-        list: pageUri,
+#FaceskyFollow #NoPromote`
+
+      const rt = new RichText({ text: followText })
+      await rt.detectFacets(atClient["agent"])
+
+      const followPost = {
+        $type: "app.bsky.feed.post",
+        text: rt.text,
+        facets: rt.facets,
         createdAt: new Date().toISOString(),
+        labels: {
+          $type: "com.atproto.label.defs#selfLabels",
+          values: [{ val: "facesky-follow" }, { val: "no-promote" }],
+        },
       }
 
       const response = await atClient["agent"].com.atproto.repo.createRecord({
-        repo: session.did,
-        collection: "app.bsky.graph.listitem",
-        record: listItem,
+        repo: atClient.getSession().did,
+        collection: POST_RECORD_TYPE,
+        record: followPost,
       })
 
       return response.data
@@ -165,8 +190,6 @@ export class ATProtocolGroupsClient {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
     try {
-      const session = atClient.getSession()
-
       // Handle image uploads if any
       let embed = undefined
       if (images && images.length > 0) {
@@ -188,40 +211,30 @@ export class ATProtocolGroupsClient {
         }
       }
 
-      // Create a post with special labels that won't appear in main feeds
+      // Create the group post with special marker
+      const groupPostText = `${GROUP_POST_MARKER} ${groupUri}
+
+${text}
+
+#FaceskyGroupPost #NoPromote`
+
+      const rt = new RichText({ text: groupPostText })
+      await rt.detectFacets(atClient["agent"])
+
       const groupPost = {
         $type: "app.bsky.feed.post",
-        text: text,
+        text: rt.text,
+        facets: rt.facets,
         embed,
         createdAt: new Date().toISOString(),
-        // Use labels to mark this as a group post (won't appear in main feed algorithms)
         labels: {
           $type: "com.atproto.label.defs#selfLabels",
-          values: [
-            {
-              val: "facesky-group-post",
-            },
-            {
-              val: "no-promote", // Prevents algorithmic promotion
-            },
-          ],
+          values: [{ val: "facesky-group-post" }, { val: "no-promote" }],
         },
-        // Add group reference in facets (hidden from display)
-        facets: [
-          {
-            index: { byteStart: text.length, byteEnd: text.length },
-            features: [
-              {
-                $type: "app.bsky.richtext.facet#link",
-                uri: groupUri,
-              },
-            ],
-          },
-        ],
       }
 
       const response = await atClient["agent"].com.atproto.repo.createRecord({
-        repo: session.did,
+        repo: atClient.getSession().did,
         collection: POST_RECORD_TYPE,
         record: groupPost,
       })
@@ -237,8 +250,6 @@ export class ATProtocolGroupsClient {
     if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
 
     try {
-      const session = atClient.getSession()
-
       // Handle image uploads if any
       let embed = undefined
       if (images && images.length > 0) {
@@ -260,40 +271,30 @@ export class ATProtocolGroupsClient {
         }
       }
 
-      // Create a post with special labels that won't appear in main feeds
+      // Create the page post with special marker
+      const pagePostText = `${PAGE_POST_MARKER} ${pageUri}
+
+${text}
+
+#FaceskyPagePost #NoPromote`
+
+      const rt = new RichText({ text: pagePostText })
+      await rt.detectFacets(atClient["agent"])
+
       const pagePost = {
         $type: "app.bsky.feed.post",
-        text: text,
+        text: rt.text,
+        facets: rt.facets,
         embed,
         createdAt: new Date().toISOString(),
-        // Use labels to mark this as a page post (won't appear in main feed algorithms)
         labels: {
           $type: "com.atproto.label.defs#selfLabels",
-          values: [
-            {
-              val: "facesky-page-post",
-            },
-            {
-              val: "no-promote", // Prevents algorithmic promotion
-            },
-          ],
+          values: [{ val: "facesky-page-post" }, { val: "no-promote" }],
         },
-        // Add page reference in facets (hidden from display)
-        facets: [
-          {
-            index: { byteStart: text.length, byteEnd: text.length },
-            features: [
-              {
-                $type: "app.bsky.richtext.facet#link",
-                uri: pageUri,
-              },
-            ],
-          },
-        ],
       }
 
       const response = await atClient["agent"].com.atproto.repo.createRecord({
-        repo: session.did,
+        repo: atClient.getSession().did,
         collection: POST_RECORD_TYPE,
         record: pagePost,
       })
@@ -310,33 +311,31 @@ export class ATProtocolGroupsClient {
       const session = atClient.getSession()
       if (!session) return []
 
-      // Get list records from the user's repo
+      // Get posts from the user's repo
       const response = await atClient["agent"].com.atproto.repo.listRecords({
         repo: session.did,
-        collection: LIST_RECORD_TYPE,
+        collection: POST_RECORD_TYPE,
         limit,
       })
 
-      // Filter for group lists
-      const groupLists = response.data.records.filter(
-        (record: any) =>
-          record.value.purpose === GROUP_LIST_PURPOSE || record.value.description?.includes("---FACESKY-GROUP---"),
-      )
+      // Filter for group definition posts
+      const groupPosts = response.data.records.filter((record: any) => record.value.text?.startsWith(GROUP_MARKER))
 
       // Transform into group format
-      return groupLists.map((record: any) => {
-        const description = record.value.description || ""
-        const lines = description.split("\n")
-        const mainDescription = lines[0]
-        const privacy = description.includes("Privacy: private") ? "private" : "public"
-        const rules = description.match(/Rules: (.+)/)?.[1] || ""
+      return groupPosts.map((record: any) => {
+        const text = record.value.text
+        const lines = text.split("\n")
+        const name = lines[0].replace(GROUP_MARKER, "").trim()
+        const description = lines[2] || ""
+        const privacy = text.includes("Privacy: private") ? "private" : "public"
+        const rules = text.match(/Rules: (.+)/)?.[1] || ""
 
         return {
           uri: record.uri,
           cid: record.cid,
           value: {
-            name: record.value.name,
-            description: mainDescription,
+            name,
+            description,
             privacy,
             rules,
             createdAt: record.value.createdAt,
@@ -360,34 +359,32 @@ export class ATProtocolGroupsClient {
       const session = atClient.getSession()
       if (!session) return []
 
-      // Get list records from the user's repo
+      // Get posts from the user's repo
       const response = await atClient["agent"].com.atproto.repo.listRecords({
         repo: session.did,
-        collection: LIST_RECORD_TYPE,
+        collection: POST_RECORD_TYPE,
         limit,
       })
 
-      // Filter for page lists
-      const pageLists = response.data.records.filter(
-        (record: any) =>
-          record.value.purpose === PAGE_LIST_PURPOSE || record.value.description?.includes("---FACESKY-PAGE---"),
-      )
+      // Filter for page definition posts
+      const pagePosts = response.data.records.filter((record: any) => record.value.text?.startsWith(PAGE_MARKER))
 
       // Transform into page format
-      return pageLists.map((record: any) => {
-        const description = record.value.description || ""
-        const lines = description.split("\n")
-        const mainDescription = lines[0]
-        const category = description.match(/Category: (.+)/)?.[1] || "General"
-        const website = description.match(/Website: (.+)/)?.[1] || ""
-        const location = description.match(/Location: (.+)/)?.[1] || ""
+      return pagePosts.map((record: any) => {
+        const text = record.value.text
+        const lines = text.split("\n")
+        const name = lines[0].replace(PAGE_MARKER, "").trim()
+        const description = lines[2] || ""
+        const category = text.match(/Category: (.+)/)?.[1] || "General"
+        const website = text.match(/Website: (.+)/)?.[1] || ""
+        const location = text.match(/Location: (.+)/)?.[1] || ""
 
         return {
           uri: record.uri,
           cid: record.cid,
           value: {
-            name: record.value.name,
-            description: mainDescription,
+            name,
+            description,
             category,
             website,
             location,
@@ -420,23 +417,29 @@ export class ATProtocolGroupsClient {
       })
 
       // Filter for posts that reference this group
-      const groupPosts = response.data.records.filter((record: any) => {
-        // Check if post has group labels and references this group
-        const hasGroupLabel = record.value.labels?.values?.some((label: any) => label.val === "facesky-group-post")
-        const referencesGroup = record.value.facets?.some((facet: any) =>
-          facet.features?.some((feature: any) => feature.uri === groupUri),
-        )
-        return hasGroupLabel && referencesGroup
-      })
+      const groupPosts = response.data.records.filter((record: any) =>
+        record.value.text?.includes(`${GROUP_POST_MARKER} ${groupUri}`),
+      )
 
-      return groupPosts.map((record: any) => ({
-        ...record,
-        author: {
-          did: session.did,
-          handle: session.handle,
-          displayName: session.displayName,
-        },
-      }))
+      return groupPosts.map((record: any) => {
+        // Extract the actual post content (remove the marker line)
+        const lines = record.value.text.split("\n")
+        const contentLines = lines.slice(2, -2) // Remove marker and hashtags
+        const actualContent = contentLines.join("\n").trim()
+
+        return {
+          ...record,
+          value: {
+            ...record.value,
+            text: actualContent, // Show clean content to user
+          },
+          author: {
+            did: session.did,
+            handle: session.handle,
+            displayName: session.displayName,
+          },
+        }
+      })
     } catch (error) {
       console.error("Failed to fetch group posts:", error)
       return []
@@ -456,23 +459,29 @@ export class ATProtocolGroupsClient {
       })
 
       // Filter for posts that reference this page
-      const pagePosts = response.data.records.filter((record: any) => {
-        // Check if post has page labels and references this page
-        const hasPageLabel = record.value.labels?.values?.some((label: any) => label.val === "facesky-page-post")
-        const referencesPage = record.value.facets?.some((facet: any) =>
-          facet.features?.some((feature: any) => feature.uri === pageUri),
-        )
-        return hasPageLabel && referencesPage
-      })
+      const pagePosts = response.data.records.filter((record: any) =>
+        record.value.text?.includes(`${PAGE_POST_MARKER} ${pageUri}`),
+      )
 
-      return pagePosts.map((record: any) => ({
-        ...record,
-        author: {
-          did: session.did,
-          handle: session.handle,
-          displayName: session.displayName,
-        },
-      }))
+      return pagePosts.map((record: any) => {
+        // Extract the actual post content (remove the marker line)
+        const lines = record.value.text.split("\n")
+        const contentLines = lines.slice(2, -2) // Remove marker and hashtags
+        const actualContent = contentLines.join("\n").trim()
+
+        return {
+          ...record,
+          value: {
+            ...record.value,
+            text: actualContent, // Show clean content to user
+          },
+          author: {
+            did: session.did,
+            handle: session.handle,
+            displayName: session.displayName,
+          },
+        }
+      })
     } catch (error) {
       console.error("Failed to fetch page posts:", error)
       return []
@@ -484,41 +493,27 @@ export class ATProtocolGroupsClient {
       const session = atClient.getSession()
       if (!session) return []
 
-      // Get listitem records from the user's repo
       const response = await atClient["agent"].com.atproto.repo.listRecords({
         repo: session.did,
-        collection: "app.bsky.graph.listitem",
+        collection: POST_RECORD_TYPE,
         limit: 100,
       })
 
-      // Filter for group memberships
-      const memberships = response.data.records.filter(async (record: any) => {
-        try {
-          // Check if the list is a group
-          const listUri = record.value.list
-          const [repo, collection, rkey] = listUri.replace("at://", "").split("/")
-          const listRecord = await atClient["agent"].com.atproto.repo.getRecord({
-            repo,
-            collection,
-            rkey,
-          })
-          return (
-            listRecord.data.value.purpose === GROUP_LIST_PURPOSE ||
-            listRecord.data.value.description?.includes("---FACESKY-GROUP---")
-          )
-        } catch {
-          return false
+      const memberships = response.data.records.filter((record: any) =>
+        record.value.text?.startsWith(GROUP_JOIN_MARKER),
+      )
+
+      return memberships.map((record: any) => {
+        const groupUri = record.value.text.split("\n")[0].replace(GROUP_JOIN_MARKER, "").trim()
+        return {
+          uri: record.uri,
+          value: {
+            groupUri,
+            role: "member",
+            joinedAt: record.value.createdAt,
+          },
         }
       })
-
-      return memberships.map((record: any) => ({
-        uri: record.uri,
-        value: {
-          groupUri: record.value.list,
-          role: "member",
-          joinedAt: record.value.createdAt,
-        },
-      }))
     } catch (error) {
       console.error("Failed to fetch user memberships:", error)
       return []
@@ -530,40 +525,24 @@ export class ATProtocolGroupsClient {
       const session = atClient.getSession()
       if (!session) return []
 
-      // Get listitem records from the user's repo
       const response = await atClient["agent"].com.atproto.repo.listRecords({
         repo: session.did,
-        collection: "app.bsky.graph.listitem",
+        collection: POST_RECORD_TYPE,
         limit: 100,
       })
 
-      // Filter for page follows
-      const follows = response.data.records.filter(async (record: any) => {
-        try {
-          // Check if the list is a page
-          const listUri = record.value.list
-          const [repo, collection, rkey] = listUri.replace("at://", "").split("/")
-          const listRecord = await atClient["agent"].com.atproto.repo.getRecord({
-            repo,
-            collection,
-            rkey,
-          })
-          return (
-            listRecord.data.value.purpose === PAGE_LIST_PURPOSE ||
-            listRecord.data.value.description?.includes("---FACESKY-PAGE---")
-          )
-        } catch {
-          return false
+      const follows = response.data.records.filter((record: any) => record.value.text?.startsWith(PAGE_FOLLOW_MARKER))
+
+      return follows.map((record: any) => {
+        const pageUri = record.value.text.split("\n")[0].replace(PAGE_FOLLOW_MARKER, "").trim()
+        return {
+          uri: record.uri,
+          value: {
+            pageUri,
+            followedAt: record.value.createdAt,
+          },
         }
       })
-
-      return follows.map((record: any) => ({
-        uri: record.uri,
-        value: {
-          pageUri: record.value.list,
-          followedAt: record.value.createdAt,
-        },
-      }))
     } catch (error) {
       console.error("Failed to fetch user page follows:", error)
       return []
@@ -580,17 +559,18 @@ export class ATProtocolGroupsClient {
         rkey,
       })
 
-      const description = response.data.value.description || ""
-      const lines = description.split("\n")
-      const mainDescription = lines[0]
-      const privacy = description.includes("Privacy: private") ? "private" : "public"
-      const rules = description.match(/Rules: (.+)/)?.[1] || ""
+      const text = response.data.value.text
+      const lines = text.split("\n")
+      const name = lines[0].replace(GROUP_MARKER, "").trim()
+      const description = lines[2] || ""
+      const privacy = text.includes("Privacy: private") ? "private" : "public"
+      const rules = text.match(/Rules: (.+)/)?.[1] || ""
 
       return {
         uri: uri,
         value: {
-          name: response.data.value.name,
-          description: mainDescription,
+          name,
+          description,
           privacy,
           rules,
           createdAt: response.data.value.createdAt,
@@ -613,18 +593,19 @@ export class ATProtocolGroupsClient {
         rkey,
       })
 
-      const description = response.data.value.description || ""
-      const lines = description.split("\n")
-      const mainDescription = lines[0]
-      const category = description.match(/Category: (.+)/)?.[1] || "General"
-      const website = description.match(/Website: (.+)/)?.[1] || ""
-      const location = description.match(/Location: (.+)/)?.[1] || ""
+      const text = response.data.value.text
+      const lines = text.split("\n")
+      const name = lines[0].replace(PAGE_MARKER, "").trim()
+      const description = lines[2] || ""
+      const category = text.match(/Category: (.+)/)?.[1] || "General"
+      const website = text.match(/Website: (.+)/)?.[1] || ""
+      const location = text.match(/Location: (.+)/)?.[1] || ""
 
       return {
         uri: uri,
         value: {
-          name: response.data.value.name,
-          description: mainDescription,
+          name,
+          description,
           category,
           website,
           location,
@@ -638,21 +619,57 @@ export class ATProtocolGroupsClient {
     }
   }
 
-  // Rest of the methods remain the same...
-  async commentOnGroupPost(groupPostUri: string, text: string, parentCommentUri?: string): Promise<any> {
-    return atClient.reply(text, groupPostUri, "placeholder-cid", parentCommentUri)
+  // Simplified comment system using regular replies
+  async commentOnGroupPost(groupPostUri: string, text: string): Promise<any> {
+    try {
+      const [repo, collection, rkey] = groupPostUri.replace("at://", "").split("/")
+      const postRecord = await atClient["agent"].com.atproto.repo.getRecord({
+        repo,
+        collection,
+        rkey,
+      })
+
+      return await atClient.reply(text, groupPostUri, postRecord.data.cid)
+    } catch (error) {
+      console.error("Failed to comment on group post:", error)
+      throw error
+    }
   }
 
-  async commentOnPagePost(pagePostUri: string, text: string, parentCommentUri?: string): Promise<any> {
-    return atClient.reply(text, pagePostUri, "placeholder-cid", parentCommentUri)
+  async commentOnPagePost(pagePostUri: string, text: string): Promise<any> {
+    try {
+      const [repo, collection, rkey] = pagePostUri.replace("at://", "").split("/")
+      const postRecord = await atClient["agent"].com.atproto.repo.getRecord({
+        repo,
+        collection,
+        rkey,
+      })
+
+      return await atClient.reply(text, pagePostUri, postRecord.data.cid)
+    } catch (error) {
+      console.error("Failed to comment on page post:", error)
+      throw error
+    }
   }
 
   async getGroupPostComments(groupPostUri: string): Promise<any[]> {
-    return []
+    try {
+      const thread = await atClient.getPostThread(groupPostUri)
+      return thread.thread.replies || []
+    } catch (error) {
+      console.error("Failed to get group post comments:", error)
+      return []
+    }
   }
 
   async getPagePostComments(pagePostUri: string): Promise<any[]> {
-    return []
+    try {
+      const thread = await atClient.getPostThread(pagePostUri)
+      return thread.thread.replies || []
+    } catch (error) {
+      console.error("Failed to get page post comments:", error)
+      return []
+    }
   }
 
   async isUserGroupAdmin(groupUri: string, userDid?: string): Promise<boolean> {
@@ -692,19 +709,34 @@ export class ATProtocolGroupsClient {
         throw new Error("Only the group creator can update the group")
       }
 
-      const updatedList = {
-        $type: "app.bsky.graph.list",
-        name: data.name,
-        description: `${data.description}\n\n---FACESKY-GROUP---\nPrivacy: ${data.privacy}${data.rules ? `\nRules: ${data.rules}` : ""}`,
-        purpose: GROUP_LIST_PURPOSE,
+      const groupText = `${GROUP_MARKER} ${data.name}
+
+${data.description}
+
+Privacy: ${data.privacy}
+${data.rules ? `Rules: ${data.rules}` : ""}
+
+#FaceskyGroup #NoPromote`
+
+      const rt = new RichText({ text: groupText })
+      await rt.detectFacets(atClient["agent"])
+
+      const updatedPost = {
+        $type: "app.bsky.feed.post",
+        text: rt.text,
+        facets: rt.facets,
         createdAt: new Date().toISOString(),
+        labels: {
+          $type: "com.atproto.label.defs#selfLabels",
+          values: [{ val: "facesky-group" }, { val: "no-promote" }],
+        },
       }
 
       const response = await atClient["agent"].com.atproto.repo.putRecord({
         repo: session.did,
         collection,
         rkey,
-        record: updatedList,
+        record: updatedPost,
       })
 
       return response.data
@@ -725,19 +757,35 @@ export class ATProtocolGroupsClient {
         throw new Error("Only the page creator can update the page")
       }
 
-      const updatedList = {
-        $type: "app.bsky.graph.list",
-        name: data.name,
-        description: `${data.description}\n\n---FACESKY-PAGE---\nCategory: ${data.category}${data.website ? `\nWebsite: ${data.website}` : ""}${data.location ? `\nLocation: ${data.location}` : ""}`,
-        purpose: PAGE_LIST_PURPOSE,
+      const pageText = `${PAGE_MARKER} ${data.name}
+
+${data.description}
+
+Category: ${data.category}
+${data.website ? `Website: ${data.website}` : ""}
+${data.location ? `Location: ${data.location}` : ""}
+
+#FaceskyPage #NoPromote`
+
+      const rt = new RichText({ text: pageText })
+      await rt.detectFacets(atClient["agent"])
+
+      const updatedPost = {
+        $type: "app.bsky.feed.post",
+        text: rt.text,
+        facets: rt.facets,
         createdAt: new Date().toISOString(),
+        labels: {
+          $type: "com.atproto.label.defs#selfLabels",
+          values: [{ val: "facesky-page" }, { val: "no-promote" }],
+        },
       }
 
       const response = await atClient["agent"].com.atproto.repo.putRecord({
         repo: session.did,
         collection,
         rkey,
-        record: updatedList,
+        record: updatedPost,
       })
 
       return response.data

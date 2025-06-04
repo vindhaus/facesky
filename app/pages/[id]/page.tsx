@@ -20,14 +20,14 @@ export default function PageDetailPage() {
   // Set up the page URI once we have the authenticated user's DID
   useEffect(() => {
     if (isAuthenticated && id) {
-      // Now using app.bsky.graph.list for pages
+      // Now using app.bsky.feed.post for pages
       const userDid = localStorage.getItem("at-session")
         ? JSON.parse(localStorage.getItem("at-session") || "{}").did
         : ""
 
       if (userDid) {
-        // Construct the URI using the list collection
-        setPageUri(`at://${userDid}/app.bsky.graph.list/${id}`)
+        // Construct the URI using the post collection
+        setPageUri(`at://${userDid}/app.bsky.feed.post/${id}`)
       }
     }
   }, [isAuthenticated, id])
