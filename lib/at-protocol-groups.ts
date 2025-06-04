@@ -628,6 +628,136 @@ export class ATProtocolGroupsClient {
     }
   }
 
+  async isUserGroupAdmin(groupUri: string, userDid?: string): Promise<boolean> {
+    try {
+      const session = atClient.getSession()
+      const targetUser = userDid || session?.did
+      if (!targetUser) return false
+
+      // Parse the group URI to get the creator's DID
+      const [creatorDid] = groupUri.replace("at://", "").split("/")
+
+      // The creator is always an admin
+      return creatorDid === targetUser
+    } catch (error) {
+      console.error("Failed to check group admin status:", error)
+      return false
+    }
+  }
+
+  async isUserPageAdmin(pageUri: string, userDid?: string): Promise<boolean> {
+    try {
+      const session = atClient.getSession()
+      const targetUser = userDid || session?.did
+      if (!targetUser) return false
+
+      // Parse the page URI to get the creator's DID
+      const [creatorDid] = pageUri.replace("at://", "").split("/")
+
+      // The creator is always an admin
+      return creatorDid === targetUser
+    } catch (error) {
+      console.error("Failed to check page admin status:", error)
+      return false
+    }
+  }
+
+  async updateGroup(groupUri: string, data: any): Promise<any> {
+    if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
+
+    try {
+      const session = atClient.getSession()
+      const [repo, collection, rkey] = groupUri.replace("at://", "").split("/")
+
+      // Only allow the creator to update
+      if (repo !== session.did) {
+        throw new Error("Only the group creator can update the group")
+      }
+
+      // Create updated group post
+      const updatedGroupPost = {
+        $type: POST_RECORD_TYPE,
+        text: `${GROUP_POST_PREFIX} ${data.name}\n\n${data.description}\n\nPrivacy: ${data.privacy}${data.rules ? `\n\nRules: ${data.rules}` : ""}`,
+        createdAt: new Date().toISOString(),
+        facets: [
+          {
+            index: { byteStart: 0, byteEnd: GROUP_POST_PREFIX.length + data.name.length },
+            features: [{ $type: "app.bsky.richtext.facet#tag", tag: "group" }],
+          },
+        ],
+      }
+
+      const response = await atClient["agent"].com.atproto.repo.putRecord({
+        repo: session.did,
+        collection,
+        rkey,
+        record: updatedGroupPost,
+      })
+
+      return response.data
+    } catch (error) {
+      console.error("Failed to update group:", error)
+      throw error
+    }
+  }
+
+  async updatePage(pageUri: string, data: any): Promise<any> {
+    if (!atClient.isAuthenticated()) throw new Error("Not authenticated")
+
+    try {
+      const session = atClient.getSession()
+      const [repo, collection, rkey] = pageUri.replace("at://", "").split("/")
+
+      // Only allow the creator to update
+      if (repo !== session.did) {
+        throw new Error("Only the page creator can update the page")
+      }
+
+      // Create updated page post
+      const updatedPagePost = {
+        $type: POST_RECORD_TYPE,
+        text: `${PAGE_POST_PREFIX} ${data.name}\n\n${data.description}\n\nCategory: ${data.category}${data.website ? `\nWebsite: ${data.website}` : ""}${data.location ? `\nLocation: ${data.location}` : ""}`,
+        createdAt: new Date().toISOString(),
+        facets: [
+          {
+            index: { byteStart: 0, byteEnd: PAGE_POST_PREFIX.length + data.name.length },
+            features: [{ $type: "app.bsky.richtext.facet#tag", tag: "page" }],
+          },
+        ],
+      }
+
+      const response = await atClient["agent"].com.atproto.repo.putRecord({
+        repo: session.did,
+        collection,
+        rkey,
+        record: updatedPagePost,
+      })
+
+      return response.data
+    } catch (error) {
+      console.error("Failed to update page:", error)
+      throw error
+    }
+  }
+
+  async addGroupAdmin(groupUri: string, adminDid: string): Promise<any> {
+    // In this simplified implementation, only the creator can be an admin
+    // In a full implementation, you'd need a more complex admin management system
+    throw new Error("Admin management not implemented in this simplified version")
+  }
+
+  async addPageAdmin(pageUri: string, adminDid: string): Promise<any> {
+    // In this simplified implementation, only the creator can be an admin
+    // In a full implementation, you'd need a more complex admin management system
+    throw new Error("Admin management not implemented in this simplified version")
+  }
+
+  async removeGroupMember(groupUri: string, memberDid: string): Promise<any> {
+    // In this simplified implementation, members manage their own membership
+    // In a full implementation, you'd need admin controls to remove members
+    throw new Error("Member removal not implemented in this simplified version")
+  }
+
   getSession() {
     return atClient.getSession()
   }
