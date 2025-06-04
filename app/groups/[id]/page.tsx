@@ -20,15 +20,14 @@ export default function GroupPage() {
   // Set up the group URI once we have the authenticated user's DID
   useEffect(() => {
     if (isAuthenticated && id) {
-      // Since we're using regular posts, the URI should be a post URI, not a custom collection
-      // The id parameter should be the rkey from the post URI
+      // Now using app.bsky.graph.list for groups
       const userDid = localStorage.getItem("at-session")
         ? JSON.parse(localStorage.getItem("at-session") || "{}").did
         : ""
 
       if (userDid) {
-        // Construct the actual post URI using the standard post collection
-        setGroupUri(`at://${userDid}/app.bsky.feed.post/${id}`)
+        // Construct the URI using the list collection
+        setGroupUri(`at://${userDid}/app.bsky.graph.list/${id}`)
       }
     }
   }, [isAuthenticated, id])
